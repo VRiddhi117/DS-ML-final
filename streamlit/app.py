@@ -19,38 +19,37 @@ BG_URL = os.getenv(
 )
 
 # ----------------------------
-# Styling
+# Keep OLD layout, FIX scroll:
+# - remove the overlay pseudo-element that captures scroll
+# - apply background on .stApp (streamlit root) using a normal gradient
 # ----------------------------
 st.markdown(
     f"""
 <style>
-/* Background */
-[data-testid="stAppViewContainer"] {{
-  background: url("{BG_URL}") center/cover fixed no-repeat;
-  position: relative;
+/* Ensure page can scroll */
+html, body {{
+  height: auto !important;
+  overflow-y: auto !important;
 }}
-[data-testid="stAppViewContainer"]::before {{
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: rgba(8,10,14,0.88);
-  backdrop-filter: blur(7px);
-  -webkit-backdrop-filter: blur(7px);
-  z-index: 0;
-}}
-[data-testid="stAppViewContainer"] > .main {{
-  position: relative;
-  z-index: 1;
+
+/* Background on the main app root (no overlay pseudo-element) */
+.stApp {{
+  background:
+    linear-gradient(rgba(8,10,14,0.88), rgba(8,10,14,0.88)),
+    url("{BG_URL}");
+  background-size: cover;
+  background-position: center;
+  background-attachment: fixed;
 }}
 
 /* Layout */
 .block-container {{
   max-width: 1150px;
-  padding-top: 1.1rem;
-  padding-bottom: 2rem;
+  padding-top: 4rem;
+  padding-bottom: 2.2rem;
 }}
 
-/* Glass card */
+/* Glass header card */
 .glass {{
   background: rgba(255,255,255,0.06);
   border: 1px solid rgba(255,255,255,0.10);
@@ -93,16 +92,13 @@ section[data-testid="stSidebar"] {{
   border-right: 1px solid rgba(255,255,255,0.08);
 }}
 
-/* Inputs */
+/* Dark inputs */
 div[data-testid="stTextArea"] textarea,
 div[data-testid="stNumberInput"] input {{
   background: rgba(20,24,32,0.92) !important;
   border-radius: 12px !important;
   color: #e8eefc !important;
   border: 1px solid rgba(255,255,255,0.10) !important;
-}}
-div[data-testid="stSlider"] > div {{
-  padding-top: 0.25rem;
 }}
 
 /* Buttons */
@@ -132,28 +128,6 @@ button {{
   opacity: 0.82;
   font-size: 13px;
 }}
-.kpi {{
-  display:flex;
-  gap: 14px;
-  flex-wrap: wrap;
-  margin-top: 10px;
-}}
-.kpi > div {{
-  background: rgba(255,255,255,0.06);
-  border: 1px solid rgba(255,255,255,0.10);
-  padding: 10px 12px;
-  border-radius: 14px;
-  min-width: 150px;
-}}
-.kpi-label {{
-  font-size: 12px;
-  opacity: 0.75;
-}}
-.kpi-value {{
-  font-size: 18px;
-  font-weight: 800;
-  margin-top: 2px;
-}}
 </style>
 """,
     unsafe_allow_html=True,
@@ -174,7 +148,6 @@ st.markdown(
   <p class="hero-title">Cosmetics Review Classifier</p>
   <p class="hero-sub">
     Predict whether a review is <b>Positive</b> or <b>Negative</b> using review text + rating signals.
-    Includes API health check, explanation, and raw JSON view for demos.
   </p>
 </div>
 """,
@@ -224,7 +197,7 @@ with st.sidebar:
     show_payload = st.checkbox("Show payload", value=False)
 
 # ----------------------------
-# Main layout
+# Main layout (same as before)
 # ----------------------------
 left, right = st.columns([2, 1], gap="large")
 
@@ -264,9 +237,6 @@ with right:
 st.write("")
 predict_btn = st.button("🔍 Predict", type="primary", use_container_width=True)
 
-# ----------------------------
-# Predict
-# ----------------------------
 def safe_float(x, default=float("nan")):
     try:
         return float(x)
@@ -298,20 +268,14 @@ if predict_btn:
     with st.spinner("Calling API..."):
         out = None
         last_err = None
-        status_code = None
-        raw_text = None
 
         for attempt in range(1, 4):
             try:
                 r = requests.post(predict_url, json=payload, timeout=45)
-                status_code = r.status_code
-                raw_text = r.text
-
                 if r.status_code == 422:
                     st.error("422 validation error (payload rejected).")
-                    st.code(raw_text)
+                    st.code(r.text)
                     break
-
                 r.raise_for_status()
                 out = r.json()
                 break
@@ -320,17 +284,9 @@ if predict_btn:
                 time.sleep(1.5 * attempt)
 
         if out is None:
-            st.error("Prediction failed.")
-            st.caption(f"POST {predict_url}")
-            if status_code is not None:
-                st.caption(f"HTTP status: {status_code}")
-            if raw_text:
-                st.code(raw_text)
-            if last_err:
-                st.caption(f"Last error: {last_err}")
+            st.error(f"Prediction failed: {last_err}")
             st.stop()
 
-    # Parse
     pred = safe_int(out.get("prediction", None))
     p_pos = safe_float(out.get("probability_positive", out.get("probability", float("nan"))))
     exp = out.get("explain", {}) if isinstance(out.get("explain", {}), dict) else {}
@@ -344,7 +300,6 @@ if predict_btn:
     conf = (p_pos if is_pos else (1 - p_pos)) if (p_pos == p_pos) else 0.5
 
     st.subheader("Result")
-
     st.markdown(
         f"""
         <div class="result {'result-pos' if is_pos else 'result-neg'}">
@@ -360,18 +315,6 @@ if predict_btn:
         unsafe_allow_html=True,
     )
     st.progress(max(0.0, min(1.0, conf)))
-
-    # KPI row
-    st.markdown(
-        f"""
-        <div class="kpi">
-          <div><div class="kpi-label">Mode</div><div class="kpi-value">{out.get('mode', mode)}</div></div>
-          <div><div class="kpi-label">p_positive</div><div class="kpi-value">{p_pos:.3f}</div></div>
-          <div><div class="kpi-label">Threshold</div><div class="kpi-value">{threshold:.2f}</div></div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
 
     if show_explain:
         st.write("")
