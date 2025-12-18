@@ -7,8 +7,8 @@ COPY api/requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
 
 # Copy API code + model (source -> destination)
-COPY api/app.py /app/app.py
-COPY api/best_model.joblib /app/best_model.joblib
+COPY app.py /app/app.py
+COPY best_model.joblib /app/best_model.joblib
 
 EXPOSE 8000
 
