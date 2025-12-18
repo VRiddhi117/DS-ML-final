@@ -2,11 +2,11 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY api/requirements.txt /app/requirements.txt
+RUN pip install --no-cache-dir -r /app/requirements.txt
 
-COPY app.py .
-COPY best_model.joblib .
+COPY api/app.py /app/app.py
+COPY api/best_model.joblib /app/best_model.joblib
 
 EXPOSE 8000
 

@@ -1,60 +1,53 @@
-import os
-import joblib
-import pandas as pd
 from fastapi import FastAPI
 from pydantic import BaseModel
-from typing import Union
+import joblib
 
-# -----------------------------
-# Config
-# -----------------------------
-MODEL_PATH = os.getenv("MODEL_PATH", "best_model.joblib")  # default inside /app
+app = FastAPI()
 
-# -----------------------------
-# Load model at startup
-# -----------------------------
-model = joblib.load(MODEL_PATH)
+model = joblib.load("best_model.joblib")
 
-# -----------------------------
-# API
-# -----------------------------
-app = FastAPI(title="Cosmetics Review Classifier", version="0.1.0")
-
-class ReviewInput(BaseModel):
+class PredictRequest(BaseModel):
     review_text: str
     rating: int
     helpful_votes: int
-    verified_purchase: Union[bool, int]
+    verified_purchase: bool
+    mode: str = "text"       # text | rating | hybrid
+    text_weight: float = 0.8
+    threshold: float = 0.5
 
-@app.get("/")
-def home():
-    return {"status": "ok", "message": "Cosmetics Review Classifier API running"}
 
 @app.post("/predict")
-def predict(inp: ReviewInput):
-    # Normalize verified_purchase into 0/1
-    verified = inp.verified_purchase
-    if isinstance(verified, bool):
-        verified = int(verified)
-    else:
-        verified = int(verified)
+def predict(req: PredictRequest):
+    # 1️⃣ Text probability
+    p_text = float(model.text_model.predict_proba([req.review_text])[0, 1])
 
-    X = pd.DataFrame([{
-        "review_text": inp.review_text,
-        "rating": inp.rating,
-        "helpful_votes": inp.helpful_votes,
-        "verified_purchase": verified
-    }])
+    # 2️⃣ Rating probability (rule-based)
+    rating_map = {1: 0.05, 2: 0.15, 3: 0.35, 4: 0.75, 5: 0.90}
+    p_rating = rating_map.get(req.rating, 0.5)
 
-    pred = int(model.predict(X)[0])
+    # 3️⃣ Combine based on mode
+    if req.mode == "text":
+        p_final = p_text
+        text_weight = 1.0
+    elif req.mode == "rating":
+        p_final = p_rating
+        text_weight = 0.0
+    else:  # hybrid
+        text_weight = req.text_weight
+        p_final = text_weight * p_text + (1 - text_weight) * p_rating
 
-    # If your pipeline supports predict_proba, return probability too
-    prob = None
-    if hasattr(model, "predict_proba"):
-        prob = float(model.predict_proba(X)[0][1])
+    label = int(p_final >= req.threshold)
 
     return {
-        "prediction": pred,
-        "label": pred,
-        "probability_positive": prob
+        "prediction": label,
+        "label": label,
+        "probability_positive": p_final,
+        "mode": req.mode,
+        "text_weight": text_weight,
+        "threshold": req.threshold,
+        "explain": {
+            "p_text": p_text,
+            "p_rating": p_rating,
+            "p_final": p_final
+        }
     }
