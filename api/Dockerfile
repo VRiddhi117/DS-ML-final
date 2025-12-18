@@ -2,15 +2,11 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install dependencies
-COPY api/requirements.txt /app/requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt
+COPY requirements.txt /app/requirements.txt
+RUN pip install --no-cache-dir -r /app/requirements.txt
 
-# Copy model + code
-COPY api/best_model.joblib /app/best_model.joblib
-COPY api/app.py /app/app.py
-
+COPY app.py /app/app.py
+COPY best_model.joblib /app/best_model.joblib
 
 EXPOSE 8000
-
 CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
