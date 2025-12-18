@@ -1,15 +1,24 @@
+import os
+import joblib
+import pandas as pd
 from fastapi import FastAPI
 from pydantic import BaseModel
 from typing import Union
-import pandas as pd
-import joblib
-from pathlib import Path
 
-app = FastAPI(title="Cosmetics Review Classifier")
+# -----------------------------
+# Config
+# -----------------------------
+MODEL_PATH = os.getenv("MODEL_PATH", "best_model.joblib")  # default inside /app
 
-# Load model from same folder as this app.py
-MODEL_PATH = Path(__file__).parent / "best_model.joblib"
+# -----------------------------
+# Load model at startup
+# -----------------------------
 model = joblib.load(MODEL_PATH)
+
+# -----------------------------
+# API
+# -----------------------------
+app = FastAPI(title="Cosmetics Review Classifier", version="0.1.0")
 
 class ReviewInput(BaseModel):
     review_text: str
@@ -17,32 +26,35 @@ class ReviewInput(BaseModel):
     helpful_votes: int
     verified_purchase: Union[bool, int]
 
-@app.get("/health")
-def health():
-    return {"status": "ok", "model_path": str(MODEL_PATH)}
+@app.get("/")
+def home():
+    return {"status": "ok", "message": "Cosmetics Review Classifier API running"}
 
 @app.post("/predict")
 def predict(inp: ReviewInput):
-    # normalize verified_purchase
-    verified = int(bool(inp.verified_purchase))
+    # Normalize verified_purchase into 0/1
+    verified = inp.verified_purchase
+    if isinstance(verified, bool):
+        verified = int(verified)
+    else:
+        verified = int(verified)
 
     X = pd.DataFrame([{
         "review_text": inp.review_text,
-        "rating": int(inp.rating),
-        "helpful_votes": int(inp.helpful_votes),
+        "rating": inp.rating,
+        "helpful_votes": inp.helpful_votes,
         "verified_purchase": verified
     }])
 
-    # predict label
-    y_pred = int(model.predict(X)[0])
+    pred = int(model.predict(X)[0])
 
-    # probability if available
-    proba = None
+    # If your pipeline supports predict_proba, return probability too
+    prob = None
     if hasattr(model, "predict_proba"):
-        proba = float(model.predict_proba(X)[0][1])
+        prob = float(model.predict_proba(X)[0][1])
 
     return {
-        "label": y_pred,
-        "sentiment": "positive" if y_pred == 1 else "negative",
-        "prob_positive": proba
+        "prediction": pred,
+        "label": pred,
+        "probability_positive": prob
     }
