@@ -9,7 +9,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy model + code
 COPY api/best_model.joblib /app/best_model.joblib
 COPY api/app.py /app/app.py
-COPY api/housing_pipeline.py /app/housing_pipeline.py
+
 
 EXPOSE 8000
 
