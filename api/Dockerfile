@@ -2,11 +2,13 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
+# Install deps first (better caching)
 COPY api/requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
 
+# Copy API code + model (source -> destination)
 COPY api/app.py /app/app.py
-COPY /app/best_model.joblib
+COPY api/best_model.joblib /app/best_model.joblib
 
 EXPOSE 8000
 
