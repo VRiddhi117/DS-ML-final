@@ -1,74 +1,62 @@
-import os
-import joblib
-import numpy as np
-import pandas as pd
 from fastapi import FastAPI
 from pydantic import BaseModel
-from typing import Literal
+import joblib
+import os
+import numpy as np
 
-app = FastAPI(title="Cosmetics Review Classifier")
+app = FastAPI(title="Cosmetics Review Sentiment API")
 
-MODEL_PATH = os.getenv("MODEL_PATH", "/app/best_model.joblib")
+# Load model once at startup
+MODEL_PATH = os.getenv("MODEL_PATH", os.path.join(os.path.dirname(__file__), "best_model.joblib"))
 model = joblib.load(MODEL_PATH)
 
-class ReviewInput(BaseModel):
+
+class PredictRequest(BaseModel):
     review_text: str
-    rating: int
-    helpful_votes: int = 0
-    verified_purchase: bool = False
-
-    # demo controls
-    mode: Literal["text", "rating", "hybrid"] = "text"
-    text_weight: float = 0.8
-    threshold: float = 0.5
-
-
-def rating_to_prob(rating: int) -> float:
-    # simple monotonic mapping (works well for demo)
-    mapping = {1: 0.05, 2: 0.15, 3: 0.35, 4: 0.75, 5: 0.90}
-    return float(mapping.get(int(rating), 0.50))
 
 
 @app.get("/")
 def root():
-    return {"status": "ok"}
+    return {"status": "ok", "message": "Cosmetics sentiment API is running"}
 
 
 @app.post("/predict")
-def predict(inp: ReviewInput):
-    # Text model probability
-    # If your saved model is a sklearn Pipeline (TfidfVectorizer + LogisticRegression),
-    # it will support predict_proba on text directly.
-    p_text = float(model.predict_proba([inp.review_text])[0][1])
+def predict(req: PredictRequest):
+    text = (req.review_text or "").strip()
 
-    # Rating probability
-    p_rating = rating_to_prob(inp.rating)
+    if not text:
+        return {
+            "prediction": 0,
+            "label": 0,
+            "probability_positive": 0.0,
+            "detail": "Empty review_text"
+        }
 
-    # Decide final prob based on mode
-    if inp.mode == "text":
-        p_final = p_text
-        used_weight = 1.0
-    elif inp.mode == "rating":
-        p_final = p_rating
-        used_weight = 0.0
+    # Most sklearn text pipelines accept list[str]
+    X = [text]
+
+    prob_pos = None
+
+    # 1) Preferred: predict_proba
+    if hasattr(model, "predict_proba"):
+        proba = model.predict_proba(X)
+        # probability of class 1 (positive)
+        prob_pos = float(proba[0][1])
+
+    # 2) Fallback: decision_function -> sigmoid
+    elif hasattr(model, "decision_function"):
+        score = float(model.decision_function(X)[0])
+        prob_pos = float(1.0 / (1.0 + np.exp(-score)))
+
+    # 3) Fallback: predict only (no probability available)
     else:
-        w = min(max(inp.text_weight, 0.0), 1.0)
-        p_final = w * p_text + (1.0 - w) * p_rating
-        used_weight = w
+        pred = int(model.predict(X)[0])
+        prob_pos = 1.0 if pred == 1 else 0.0
 
-    pred = 1 if p_final >= inp.threshold else 0
+    pred = 1 if prob_pos >= 0.5 else 0
 
     return {
         "prediction": pred,
         "label": pred,
-        "probability": p_final,
-        "probability_positive": p_final,
-        "mode": inp.mode,
-        "text_weight": used_weight,
-        "threshold": inp.threshold,
-        "explain": {
-            "p_text": p_text,
-            "p_rating": p_rating,
-            "p_final": p_final
-        }
+        "probability_positive": prob_pos
     }
