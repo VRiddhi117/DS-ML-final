@@ -45,7 +45,7 @@ html, body {{
 /* Layout */
 .block-container {{
   max-width: 1150px;
-  padding-top: 4rem;
+  padding-top: 4.2rem;
   padding-bottom: 2.2rem;
 }}
 
